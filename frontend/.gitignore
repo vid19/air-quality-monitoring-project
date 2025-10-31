@@ -1,0 +1,13 @@
+# Node.js dependencies
+node_modules
+
+# Vite build files
+dist
+
+# Env files
+.env*
+
+# Log and temp files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

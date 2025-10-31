@@ -1,0 +1,8 @@
+# Go build files
+backend-api
+
+# Env file with our secret key
+.env
+
+# OS files
+.DS_Store
