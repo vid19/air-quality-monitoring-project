@@ -11,6 +11,7 @@ import (
 )
 
 var DB *gorm.DB // Database instance 
+var JWTSecretKey []byte
 
 func init() {
 	if err := godotenv.Load(); err != nil {
@@ -36,4 +37,10 @@ func init() {
 	log.Println("Database connection established")
 
 	// moving AutoMigrate to main.go to run it only when the main application starts.
+
+	key := os.Getenv("JWT_SECRET_KEY")
+	if key == "" {
+		log.Fatal("JWT_SECRET_KEY is not set in .env file")
+	}
+	JWTSecretKey = []byte(key)
 }
