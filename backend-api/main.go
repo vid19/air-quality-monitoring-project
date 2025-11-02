@@ -2,39 +2,50 @@ package main
 
 import (
 	"io/ioutil"
-	"net/http"
-	"time"
-
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+//DB Connection
+var db *gorm.DB
+
+//  CONFIGURATION 
+var jwtSecretKey = []byte("my_super_secret_key")
+
+// init() runs before main()
 func init() {
-	// Load the .env file
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, reading from environment")
 	}
+
+	//  NEW: CONNECT TO DATABASE 
+	dsn := "host=localhost user=postgres password=soupvid dbname=postgres port=5432 sslmode=disable"
+	var err error
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+	log.Println("Database connection established")
+
+	// This automatically creates the "users" table for us based on the User struct.
+	db.AutoMigrate(&User{})
 }
 
-// --- MOCK USER DATABASE ---
-// In a real app, this would be your PostgreSQL database
-var userDatabase = make(map[string]User)
-
-// This is our "User" model
+//added GORM tags to our User struct
 type User struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"-"` // Don't send the hash in JSON
+	ID           uint   `gorm:"primaryKey"`
+	Username     string `gorm:"unique;not null"`
+	PasswordHash string `gorm:"not null"`
 }
-
-// --- CONFIGURATION ---
-// IMPORTANT: Change this to a long, random secret key!
-var jwtSecretKey = []byte("my_super_secret_key")
-
-// --- AUTH HANDLERS ---
 
 // RegisterRequest holds the data from a user's registration
 type RegisterRequest struct {
@@ -50,7 +61,9 @@ func registerHandler(c *gin.Context) {
 	}
 
 	// Check if user already exists
-	if _, exists := userDatabase[req.Username]; exists {
+	var existingUser User
+	if err := db.First(&existingUser, "username = ?", req.Username).Error; err == nil {
+		// We found a user, so they already exist
 		c.JSON(http.StatusConflict, gin.H{"error": "Username already taken"})
 		return
 	}
@@ -62,25 +75,33 @@ func registerHandler(c *gin.Context) {
 		return
 	}
 
-	// Save new user to our mock database
-	userDatabase[req.Username] = User{
+	// Create new user
+	newUser := User{
 		Username:     req.Username,
 		PasswordHash: string(hashedPassword),
+	}
+
+	// Save new user to the database
+	if err := db.Create(&newUser).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register user"})
+		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully"})
 }
 
+
 func loginHandler(c *gin.Context) {
-	var req RegisterRequest // Re-use the same struct
+	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	// Check if user exists
-	user, exists := userDatabase[req.Username]
-	if !exists {
+	var user User
+	if err := db.First(&user, "username = ?", req.Username).Error; err != nil {
+		// User not found
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
@@ -92,10 +113,10 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	// --- Create a JWT Token ---
+	// Create JWT Token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": user.Username,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Token expires in 24 hours
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
 	tokenString, err := token.SignedString(jwtSecretKey)
@@ -104,18 +125,13 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	// Send the token back
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
-func weatherHandler(c *gin.Context) {
-	apiKey := os.Getenv("OPENWEATHER_API_KEY") // 👈 CHANGED
-	if apiKey == "" {
-		log.Println("API key not set")
-	}
 
-	lat := "51.5072"
-	lon := "-0.1276"
+func weatherHandler(c *gin.Context) {
+	apiKey := os.Getenv("OPENWEATHER_API_KEY") 
+	lat := "51.5072"; lon := "-0.1276"
 	url := "https://api.openweathermap.org/data/2.5/air_pollution?lat=" + lat + "&lon=" + lon + "&appid=" + apiKey
 	resp, err := http.Get(url)
 	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch data from OpenWeather"}); return }
@@ -124,7 +140,6 @@ func weatherHandler(c *gin.Context) {
 	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"}); return }
 	c.Data(http.StatusOK, "application/json", body)
 }
-
 func predictionHandler(c *gin.Context) {
 	pythonServiceUrl := "http://localhost:8001/predict"
 	resp, err := http.Post(pythonServiceUrl, "application/json", nil)
@@ -136,26 +151,17 @@ func predictionHandler(c *gin.Context) {
 }
 
 
-// --- MAIN FUNCTION ---
 func main() {
 	r := gin.Default()
-
-	// Group API routes
 	api := r.Group("/api")
 	{
-		// Auth routes
 		auth := api.Group("/auth")
 		{
 			auth.POST("/register", registerHandler)
 			auth.POST("/login", loginHandler)
 		}
-
-		// Data routes
 		api.GET("/current-weather", weatherHandler)
 		api.GET("/prediction", predictionHandler)
-		
-		// We'll add a "protected" route here later
 	}
-
-	r.Run() // Runs on http://localhost:8080
+	r.Run() 
 }
