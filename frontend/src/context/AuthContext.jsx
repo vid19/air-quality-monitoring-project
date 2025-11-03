@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  // Get token from localStorage if it exists
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [error, setError] = useState(null);
   const navigate = useNavigate();
@@ -20,9 +19,7 @@ export const AuthProvider = ({ children }) => {
 
       if (response.data.token) {
         setToken(response.data.token);
-        // Store the token in localStorage to keep user logged in
         localStorage.setItem("token", response.data.token);
-        // Send user to the main dashboard
         navigate("/");
       }
     } catch (err) {
@@ -49,20 +46,18 @@ export const AuthProvider = ({ children }) => {
     navigate("/login");
   };
 
-  // The value we pass to all child components
   const value = {
     token,
     error,
     login,
     register,
     logout,
-    isAuthenticated: !!token, // a boolean (true/false) if token exists
+    isAuthenticated: !!token,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// This is a custom hook to easily use our context
 export const useAuth = () => {
   return useContext(AuthContext);
 };

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecretKey = []byte("my_super_secret_key")
+
 
 func RegisterHandler(c *gin.Context) {
 	var req models.RegisterRequest
@@ -69,7 +69,7 @@ func LoginHandler(c *gin.Context) {
 		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
-	tokenString, err := token.SignedString(jwtSecretKey)
+	tokenString, err := token.SignedString(config.JWTSecretKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
 		return
