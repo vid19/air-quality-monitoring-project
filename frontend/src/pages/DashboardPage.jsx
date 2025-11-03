@@ -8,20 +8,20 @@ function DashboardPage() {
   const [predictionData, setPredictionData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // State for our new location form
-  const [form, setForm] = useState({ name: "", latitude: "", longitude: "" });
+  // To show which location is currently active
+  const [selectedLocation, setSelectedLocation] = useState(null);
 
+  const [form, setForm] = useState({ name: "", latitude: "", longitude: "" });
   const { logout } = useAuth();
 
-  // This function fetches all the user's saved locations
   const fetchLocations = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/locations"); // Uses our auth token
-      setLocations(response.data || []); // Ensure it's an array
+      const response = await api.get("/api/locations");
+      setLocations(response.data || []);
 
-      // If they have locations, fetch weather for the first one
       if (response.data && response.data.length > 0) {
+        // Automatically fetch weather for the first location on load
         handleFetchWeather(response.data[0]);
       } else {
         setLoading(false);
@@ -32,17 +32,24 @@ function DashboardPage() {
     }
   };
 
-  // This function fetches weather/prediction for a specific location
+  // --- 👇 THIS IS THE KEY UPGRADE ---
   const handleFetchWeather = async (location) => {
     try {
       setLoading(true);
+      setSelectedLocation(location); // Set the active location
       setCurrentData(null);
       setPredictionData(null);
 
-      //pass the lat/lon to our weather endpoints
+      // Pass the lat/lon as query parameters
+      const params = {
+        lat: location.latitude,
+        lon: location.longitude,
+      };
+
+      // Run requests in parallel using our dynamic params
       const [currentRes, predictionRes] = await Promise.all([
-        api.get("/api/current-weather"), // TODO: Update backend to use lat/lon
-        api.get("/api/prediction"), // TODO: Update backend to use lat/lon
+        api.get("/api/current-weather", { params }),
+        api.get("/api/prediction", { params }),
       ]);
 
       setCurrentData(currentRes.data);
@@ -53,30 +60,22 @@ function DashboardPage() {
     setLoading(false);
   };
 
-  // Fetch locations when the page loads
   useEffect(() => {
     fetchLocations();
-  }, []); //Runs once
+  }, []);
 
-  // FORM HANDLERS
   const handleFormChange = (e) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
+    setForm({ ...form, [e.target.name]: e.target.value });
   };
 
   const handleAddLocation = async (e) => {
     e.preventDefault();
     try {
-      // Send the new location to our protected backend route
       const response = await api.post("/api/locations", {
         name: form.name,
         latitude: parseFloat(form.latitude),
         longitude: parseFloat(form.longitude),
       });
-
-      // Add the new location to our state and clear the form
       setLocations([...locations, response.data]);
       setForm({ name: "", latitude: "", longitude: "" });
     } catch (error) {
@@ -87,8 +86,7 @@ function DashboardPage() {
   const handleDeleteLocation = async (id) => {
     if (window.confirm("Are you sure you want to delete this location?")) {
       try {
-        await api.delete(`/api/locations/${id}`); // Uses our auth token!
-        // Filter out the deleted location from our state
+        await api.delete(`/api/locations/${id}`);
         setLocations(locations.filter((loc) => loc.id !== id));
       } catch (error) {
         console.error("Error deleting location:", error);
@@ -105,7 +103,6 @@ function DashboardPage() {
 
       <hr />
 
-      {/*ADD LOCATION FORM*/}
       <h2>Add a New Location</h2>
       <form onSubmit={handleAddLocation}>
         <input
@@ -134,15 +131,19 @@ function DashboardPage() {
 
       <hr />
 
-      {/*LOCATIONS LIST*/}
       <h2>My Locations</h2>
       {locations.length === 0 && <p>You have no saved locations.</p>}
       <ul>
         {locations.map((loc) => (
           <li key={loc.id}>
             {loc.name} ({loc.latitude}, {loc.longitude})
-            {/* We'll add the weather fetch later */}
-            {/* <button onClick={() => handleFetchWeather(loc)}>Get Weather</button> */}
+            {/* --- 👇 ADDED THIS BUTTON --- */}
+            <button
+              onClick={() => handleFetchWeather(loc)}
+              style={{ marginLeft: "10px" }}
+            >
+              Get Weather
+            </button>
             <button
               onClick={() => handleDeleteLocation(loc.id)}
               style={{ color: "red", marginLeft: "10px" }}
@@ -155,8 +156,10 @@ function DashboardPage() {
 
       <hr />
 
-      {/*WEATHER DISPLAY*/}
-      <h2>Weather Data (Hard-coded for now)</h2>
+      {/* --- 👇 DYNAMIC TITLE --- */}
+      <h2>
+        Weather Data for {selectedLocation ? selectedLocation.name : "..."}
+      </h2>
       {loading && <p>Loading data...</p>}
 
       <h3>Current Air Quality (from Go/OpenWeather)</h3>
